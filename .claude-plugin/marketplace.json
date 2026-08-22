@@ -1,0 +1,14 @@
+{
+  "name": "yuu-plugins",
+  "description": "ゆう個人用 Claude Code プラグイン集",
+  "owner": { "name": "langweiden0202", "url": "https://github.com/langweiden0202" },
+  "plugins": [
+    {
+      "name": "dev-guard",
+      "source": "./plugins/dev-guard",
+      "description": "開発の品質ガード: 共通ルール注入・保存時の構文チェック・終了前テスト・レビュー用サブエージェント",
+      "category": "development",
+      "keywords": ["quality", "hooks", "review", "tests"]
+    }
+  ]
+}
