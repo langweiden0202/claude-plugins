@@ -19,6 +19,7 @@ description: 開発作業全般の共通ルール。コードを書く・直す�
 - パスは pathlib.Path で扱い、文字列連結しない
 - 例外は握りつぶさず、必ずログに残す
 - 外部コマンドは subprocess の引数リスト形式で、shell=True は使わない
+- GUI 配布ビルド（PyInstaller --windowed 等）では stdout/stderr が None。print 禁止、logging を使う
 - 秘密情報（APIキー・パスワード）をコードやコミットに含めない。環境変数か Secret Manager を使う
 
 ## やってはいけないこと
