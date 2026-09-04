@@ -1,7 +1,7 @@
 {
   "name": "dev-guard",
   "displayName": "Dev Guard",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "開発の品質ガード: 共通ルール注入・保存時の構文チェック・終了前テスト・レビュー用サブエージェント",
   "author": { "name": "langweiden0202", "url": "https://github.com/langweiden0202" },
   "repository": "https://github.com/langweiden0202/claude-plugins",
