@@ -4,7 +4,7 @@
 // テストが通って「終了してよい」と判断したときだけ、最後に「本体停止」を記録し、
 // 裏で動くサブエージェントが残っていなければ通知（音＋ポップアップ）を出す（notify_state.js）。
 const fs = require("fs");
-const { readStdinJson, findPython, run } = require("./common");
+const { readStdinJson, findPython, run, logNotify } = require("./common");
 const { mainStopped } = require("./notify_state");
 const data = readStdinJson();
 const cwd = data.cwd || process.cwd();
@@ -26,6 +26,7 @@ const PYTEST_NO_TESTS_COLLECTED = 5;
 function fail(r) {
   const out = ((r.stdout || "") + (r.stderr || "")).slice(-3000);
   process.stderr.write("テストが失敗しています。終了する前に直してください。\n" + out + "\n");
+  logNotify(cwd, "skip: テスト失敗で差し戻し（exit 2）→ 通知しない");
   process.exit(2); // 差し戻し。通知は出さない
 }
 

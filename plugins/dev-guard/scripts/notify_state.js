@@ -11,7 +11,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { getAncestorChain, launchDetached, notifyDone } = require("./common");
+const { getAncestorChain, launchDetached, notifyDone, logNotify } = require("./common");
 
 const STATE_DIR = path.join(process.env.LOCALAPPDATA || os.tmpdir(), "dev-guard", "sessions");
 const LOCK_STALE_MS = 10000;
@@ -83,12 +83,22 @@ function agentStarted(sessionId) {
 
 // サブエージェント終了（SubagentStop）。本体が既に止まっていて最後の 1 つなら、ここで通知する。
 function agentStopped(sessionId) {
-  const fire = withState(sessionId, (s) => {
+  const r = withState(sessionId, (s) => {
     s.agents = Math.max(0, s.agents - 1);
-    if (shouldNotify(s)) { s.notified = true; return { cwd: s.cwd, chain: s.chain }; }
-    return null;
+    if (shouldNotify(s)) { s.notified = true; return { fire: true, cwd: s.cwd, chain: s.chain }; }
+    let why;
+    if (!s.mainStopped) why = "本体がまだ動作中";
+    else if (s.notified) why = "この停止ぶんは通知済み";
+    else why = `裏のエージェントが残り ${s.agents}`;
+    return { fire: false, cwd: s.cwd, why };
   });
-  if (fire) notifyDone(fire.cwd || process.cwd(), fire.chain);
+  const cwd = r.cwd || process.cwd();
+  if (r.fire) {
+    logNotify(cwd, "notify: SubagentStop で最後のエージェントが終了、本体は停止済み → 通知");
+    notifyDone(cwd, r.chain);
+  } else {
+    logNotify(cwd, `skip: SubagentStop（${r.why}）`);
+  }
 }
 
 // 本体停止（Stop フックの最後）。残り 0 なら即通知、残りがあれば保留して 10 分の保険を仕掛ける。
@@ -97,37 +107,48 @@ function mainStopped(sessionId, cwd) {
   const now = Date.now();
   const r = withState(sessionId, (s) => {
     // Stop フックが二重登録されている等で数秒内に 2 回呼ばれても、通知は 1 回にする
-    if (s.mainStopped && now - s.stoppedAt < 3000) return "duplicate";
+    if (s.mainStopped && now - s.stoppedAt < 3000) return { r: "duplicate" };
     s.mainStopped = true;
     s.stoppedAt = now;
     s.notified = false;
     s.chain = chain;
     s.cwd = cwd;
-    if (shouldNotify(s)) { s.notified = true; return "now"; }
-    return "pending";
+    if (shouldNotify(s)) { s.notified = true; return { r: "now" }; }
+    return { r: "pending", agents: s.agents };
   });
-  if (r === "now") {
+  if (r.r === "now") {
+    logNotify(cwd, "notify: Stop で本体停止、裏のエージェント 0 → 通知");
     notifyDone(cwd, chain);
-  } else if (r === "pending") {
+  } else if (r.r === "pending") {
+    logNotify(cwd, `hold: Stop で本体停止したが裏のエージェントが残り ${r.agents} → 最後の SubagentStop まで保留（保険 ${FALLBACK_SECONDS} 秒）`);
     process.stdout.write("dev-guard: 裏で動くエージェントが残っているため、通知は全部終わってから出します。\n");
     launchDetached(process.execPath, [
       path.join(__dirname, "notify_watcher.js"), String(sessionId), String(now), String(FALLBACK_SECONDS),
     ]);
+  } else {
+    logNotify(cwd, "skip: 数秒内の二重 Stop → 1 回にまとめる");
   }
-  return r;
+  return r.r;
 }
 
 // 10 分の保険（notify_watcher.js から）。印が同じままで未通知なら 1 回だけ通知する。
 function fallbackNotify(sessionId, stoppedAt) {
-  const fire = withState(sessionId, (s) => {
+  const r = withState(sessionId, (s) => {
     if (s.mainStopped && s.stoppedAt === stoppedAt && !s.notified) {
       s.notified = true;
-      return { cwd: s.cwd, chain: s.chain, agents: s.agents };
+      return { fire: true, cwd: s.cwd, chain: s.chain, agents: s.agents };
     }
-    return null;
+    const why = (!s.mainStopped || s.stoppedAt !== stoppedAt) ? "その後に次の指示が来て印が消えた" : "すでに通知済み";
+    return { fire: false, cwd: s.cwd, why };
   });
-  if (fire) notifyDone(fire.cwd || process.cwd(), fire.chain);
-  return !!fire;
+  const cwd = r.cwd || process.cwd();
+  if (r.fire) {
+    logNotify(cwd, `notify: 保険（${FALLBACK_SECONDS} 秒）で未通知のまま → 通知（数え漏れの可能性。残りカウント ${r.agents}）`);
+    notifyDone(cwd, r.chain);
+  } else {
+    logNotify(cwd, `skip: 保険（${r.why}）`);
+  }
+  return r.fire;
 }
 
 // 次の指示が来た（UserPromptSubmit）。本体は動き出すので印を消す。

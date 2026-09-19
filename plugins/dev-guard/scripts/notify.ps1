@@ -3,7 +3,7 @@
 # そのフックを動かしている Claude Code の窓（Cursor／ターミナル）の中央に出す。
 # 窓はクリックで閉じる。放置なら5分で自動で閉じる。キー入力のフォーカスは奪わない。
 # 位置の決め方はログ %LOCALAPPDATA%\dev-guard\notify.log に1行残す。
-# 試験モード（-TestMode）: 音を鳴らさず、窓は3秒で自動で閉じる。手動確認用。
+# 試験モード（-TestMode）: ポップアップも音も出さず、ログに would-notify と位置を書くだけ。手動確認用。
 param(
   [string]$Project = "",
   [int]$ParentPid = 0,
@@ -212,8 +212,15 @@ $y = [int]($cy - $form.Height / 2)
 $x = [Math]::Max($area.Left, [Math]::Min($x, $area.Right - $form.Width))
 $y = [Math]::Max($area.Top, [Math]::Min($y, $area.Bottom - $form.Height))
 $form.Location = New-Object System.Drawing.Point($x, $y)
-$mode = if ($TestMode) { "test" } else { "normal" }
-Write-Log ("mode=" + $mode + " position=" + $how + " at (" + $x + "," + $y + ") parentPid=" + $ParentPid + " chain=" + $chainText)
+$where = "position=" + $how + " at (" + $x + "," + $y + ") parentPid=" + $ParentPid + " chain=" + $chainText
+
+# 試験モード: ここで終わり。ポップアップも音も出さず、「鳴らすはずだった」とだけ記録する
+if ($TestMode) {
+  Write-Log ("mode=test would-notify " + $where)
+  $form.Dispose()
+  exit 0
+}
+Write-Log ("mode=normal notify " + $where)
 
 # ---- 閉じ方: クリック、または一定時間で自動 ------------------------------
 $close = { $form.Close() }

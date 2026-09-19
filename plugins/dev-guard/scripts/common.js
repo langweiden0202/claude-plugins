@@ -89,9 +89,24 @@ function launchDetached(exe, args) {
   }
 }
 
+// 通知の判断をログに 1 行残す（notify.ps1 と同じ %LOCALAPPDATA%\dev-guard\notify.log）。
+// 「鳴らした／鳴らすはずだった／鳴らさない理由」がここに並ぶので、場面ごとの確認はこのログで行う。
+function logNotify(cwd, msg) {
+  try {
+    const dir = path.join(process.env.LOCALAPPDATA || require("os").tmpdir(), "dev-guard");
+    fs.mkdirSync(dir, { recursive: true });
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const mode = process.env.DEV_GUARD_NOTIFY_TEST === "1" ? "test" : "normal";
+    fs.appendFileSync(path.join(dir, "notify.log"),
+      `${stamp} [${path.basename(cwd || "") || cwd}] mode=${mode} ${msg}\n`, "utf8");
+  } catch { }
+}
+
 // 作業終了の通知（音＋ポップアップ）を別プロセスで出す。この関数は 0.5 秒ほどで戻る。
 // chain: 表示位置を決めるための親プロセスの系列（getAncestorChain の結果）。
-// 環境変数 DEV_GUARD_NOTIFY_TEST=1 なら試験モード（音なし・3秒で閉じる）。
+// 環境変数 DEV_GUARD_NOTIFY_TEST=1 なら試験モード（ポップアップも音も出さず、notify.log に would-notify と書くだけ）。
 function notifyDone(cwd = process.cwd(), chain = "") {
   if (process.platform !== "win32") return;
   const script = path.join(__dirname, "notify.ps1");
@@ -102,4 +117,4 @@ function notifyDone(cwd = process.cwd(), chain = "") {
   launchDetached("powershell.exe", args);
 }
 
-module.exports = { readStdinJson, findPython, venvPython, run, getAncestorChain, launchDetached, notifyDone };
+module.exports = { readStdinJson, findPython, venvPython, run, getAncestorChain, launchDetached, notifyDone, logNotify };

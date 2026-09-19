@@ -8,7 +8,8 @@
   - 表示位置は、フックを動かしている Claude Code の窓（Cursor／ターミナル）の中央。親プロセスをたどって探し、
     無ければ窓タイトルにプロジェクト名を含む窓、それも無ければ画面中央。決め方をログに 1 行残す
     （`%LOCALAPPDATA%\dev-guard\notify.log`）
-  - 試験モード（`-TestMode` または環境変数 `DEV_GUARD_NOTIFY_TEST=1`）: 音なし・3 秒で閉じる
+  - 試験モード（`-TestMode` または環境変数 `DEV_GUARD_NOTIFY_TEST=1`）: ポップアップも音も出さず、
+    notify.log に「would-notify（鳴らすはずだった）」と書くだけ。通知しない場面も理由（hold／skip）を同じログに残す
   - `~/.claude/settings.json` 側の Stop フック通知は不要になった（通知は dev-guard の 1 か所だけ）
 - 通知は「本当に全部終わった時」に 1 回だけ。裏で動くサブエージェント（Agent の run_in_background、
   code-reviewer 等）が残っていれば本体が止まっても鳴らさず、最後の 1 つが終わった時（SubagentStop）に鳴らす

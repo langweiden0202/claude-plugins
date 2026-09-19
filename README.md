@@ -40,5 +40,6 @@ Claude Code の中で:
 - Node.js（Claude Code に必須なので必ずある）
 - Python 3（作業ツリーの `.venv\Scripts\python.exe` → `python3` → `python` の順で探す。無ければ構文チェックと pytest は静かにスキップ）
 - 終了通知は Windows のみ（PowerShell 5.1 + Windows Forms）。位置決めのログは `%LOCALAPPDATA%\dev-guard\notify.log`。
-  手動確認は試験モード（音なし・3 秒で閉じる）: `DEV_GUARD_NOTIFY_TEST=1` を付けてフックを実行するか、`notify.ps1 -TestMode`
+  手動確認は試験モード（ポップアップも音も出さず、ログに would-notify と書くだけ）: `DEV_GUARD_NOTIFY_TEST=1` を付けてフックを実行するか、`notify.ps1 -TestMode`。
+  通知した／保留した／見送った理由も同じログに 1 行ずつ残る
 - `~/.claude/settings.json` には通知用の Stop / Notification フックを置かない（二重に鳴る）
