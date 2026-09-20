@@ -4,13 +4,19 @@
 // テストが通って「終了してよい」と判断したときだけ、最後に「本体停止」を記録し、
 // 裏で動くサブエージェントが残っていなければ通知（音＋ポップアップ）を出す（notify_state.js）。
 const fs = require("fs");
-const { readStdinJson, findPython, run, logNotify } = require("./common");
+const { isQuiet, readStdinJson, findPython, run, logNotify } = require("./common");
 const { mainStopped } = require("./notify_state");
 const data = readStdinJson();
 const cwd = data.cwd || process.cwd();
 const sid = data.session_id || "unknown";
 // tests/ や .venv の判定は作業ツリー基準で行う（フックの起動ディレクトリと食い違うことがある）
 try { process.chdir(cwd); } catch { }
+
+// 別のプログラムからの `claude -p` 呼び出し（DEV_GUARD_QUIET=1）は開発作業ではない。テストも通知も出さない（1.2.1）
+if (isQuiet()) {
+  logNotify(cwd, "skip: DEV_GUARD_QUIET=1（別のプログラムからの呼び出し）→ テストも通知もしない");
+  process.exit(0);
+}
 
 // stop_hook_active: この Stop フックの差し戻しを受けて Claude が続けた後の再停止。
 // テストは再実行しない（無限ループ防止）が、本体はここで本当に止まるので通知の判定はする。

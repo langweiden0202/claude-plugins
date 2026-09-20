@@ -4,6 +4,13 @@ const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
+// 別のプログラム（Pocket Summit など）が `claude -p` を呼ぶときは DEV_GUARD_QUIET=1 を付けてくる。
+// その claude は「開発作業」ではないので、テストも通知もルール注入も一切しない（1.2.1）。
+// これが無いと、アプリが AI を呼ぶたびに「〇〇 の作業が終わりました」が鳴る。
+function isQuiet() {
+  return process.env.DEV_GUARD_QUIET === "1";
+}
+
 function readStdinJson() {
   try { return JSON.parse(fs.readFileSync(0, "utf8") || "{}"); } catch { return {}; }
 }
@@ -117,4 +124,4 @@ function notifyDone(cwd = process.cwd(), chain = "") {
   launchDetached("powershell.exe", args);
 }
 
-module.exports = { readStdinJson, findPython, venvPython, run, getAncestorChain, launchDetached, notifyDone, logNotify };
+module.exports = { isQuiet, readStdinJson, findPython, venvPython, run, getAncestorChain, launchDetached, notifyDone, logNotify };

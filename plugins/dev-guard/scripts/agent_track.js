@@ -4,9 +4,10 @@
 //   node agent_track.js prompt  … UserPromptSubmit: 次の指示。本体停止の印を消す
 //   node agent_track.js end     … SessionEnd: 状態ファイルを消す
 // どの場合も exit 0（Claude Code の動作を止めない）。UserPromptSubmit では stdout に何も書かない（文脈に混ざるため）。
-const { readStdinJson } = require("./common");
+const { isQuiet, readStdinJson } = require("./common");
 const state = require("./notify_state");
 
+if (isQuiet()) process.exit(0); // 別のプログラムからの `claude -p` は数えない（run_tests.js と同じ理由・1.2.1）
 const mode = process.argv[2];
 const data = readStdinJson();
 const sid = data.session_id || "unknown";
