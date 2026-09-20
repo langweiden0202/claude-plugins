@@ -6,6 +6,7 @@
 const fs = require("fs");
 const { isQuiet, readStdinJson, findPython, run, logNotify } = require("./common");
 const { mainStopped } = require("./notify_state");
+const { decide } = require("./notify_gate");
 const data = readStdinJson();
 const cwd = data.cwd || process.cwd();
 const sid = data.session_id || "unknown";
@@ -17,6 +18,16 @@ if (isQuiet()) {
   logNotify(cwd, "skip: DEV_GUARD_QUIET=1（別のプログラムからの呼び出し）→ テストも通知もしない");
   process.exit(0);
 }
+
+// 途中経過の返答終わりでは、テストも通知もしない（1.3.0）。
+// 最後の返答に完了の目印（動作確認できます／完成です／【完了】／【判断待ち】）があるときだけ先へ進む。
+// バックグラウンドの待ち・Monitor の起床・サブエージェントの区切りで返答が一度終わっても、ここで止まる。
+const gate = decide(data.transcript_path);
+if (!gate.notify) {
+  logNotify(cwd, `skip: 途中経過の返答終わり（${gate.why}）→ テストも通知もしない`);
+  process.exit(0);
+}
+logNotify(cwd, `gate: ${gate.why} → テストを実行し、通ればここで 1 回だけ通知`);
 
 // stop_hook_active: この Stop フックの差し戻しを受けて Claude が続けた後の再停止。
 // テストは再実行しない（無限ループ防止）が、本体はここで本当に止まるので通知の判定はする。
