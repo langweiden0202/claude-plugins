@@ -2,20 +2,24 @@
 //
 //   agents      : 起動中のサブエージェント数（PreToolUse(Agent) で +1、SubagentStop で -1）
 //   mainStopped : 本体（Claude 本体の返答）が止まった印。UserPromptSubmit（次の指示）で消える
-//   stoppedAt   : 印を付けた時刻（ms）。10 分の保険（notify_watcher.js）が「同じ印か」を確かめるのに使う
+//   stoppedAt   : 印を付けた時刻（ms）。数秒内の二重 Stop を 1 回にまとめる判定に使う
 //   notified    : この印に対して通知済みか
 //   chain, cwd  : 通知の表示位置とプロジェクト名（Stop 時に保存）
+//
+// 1.2.0（恒久ルール 10）: 通知を出すのは「本体の Stop で、裏のエージェントが 0 のとき」だけ。
+//   SubagentStop では鳴らさない（サブエージェントが終わっても本体はその結果を受けて続きをやる）。
+//   本体が止まった時点で裏のエージェントが残っていれば鳴らさず、本体はエージェントの結果を受けて再開し、
+//   最後の Stop（残り 0）で 1 回だけ鳴る。10 分の保険通知（notify_watcher.js）は廃止。
 //
 // 状態は %LOCALAPPDATA%\dev-guard\sessions\<session_id>.json。
 // 複数の hook が同時に走る（並列 Agent 起動など）ので、mkdir によるロックで読み書きを直列化する。
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { getAncestorChain, launchDetached, notifyDone, logNotify } = require("./common");
+const { getAncestorChain, notifyDone, logNotify } = require("./common");
 
 const STATE_DIR = path.join(process.env.LOCALAPPDATA || os.tmpdir(), "dev-guard", "sessions");
 const LOCK_STALE_MS = 10000;
-const FALLBACK_SECONDS = Number(process.env.DEV_GUARD_FALLBACK_SECONDS) || 600; // 印から 10 分
 
 function stateFile(sessionId) {
   const safe = String(sessionId || "unknown").replace(/[^A-Za-z0-9._-]/g, "_");
@@ -81,27 +85,18 @@ function agentStarted(sessionId) {
   withState(sessionId, (s) => { s.agents += 1; });
 }
 
-// サブエージェント終了（SubagentStop）。本体が既に止まっていて最後の 1 つなら、ここで通知する。
+// サブエージェント終了（SubagentStop）。数を減らすだけで、ここでは鳴らさない（恒久ルール 10）。
+// 本体はサブエージェントの結果を受けて続きをやるので、通知は本体の最後の Stop で出す。
 function agentStopped(sessionId) {
   const r = withState(sessionId, (s) => {
     s.agents = Math.max(0, s.agents - 1);
-    if (shouldNotify(s)) { s.notified = true; return { fire: true, cwd: s.cwd, chain: s.chain }; }
-    let why;
-    if (!s.mainStopped) why = "本体がまだ動作中";
-    else if (s.notified) why = "この停止ぶんは通知済み";
-    else why = `裏のエージェントが残り ${s.agents}`;
-    return { fire: false, cwd: s.cwd, why };
+    return { cwd: s.cwd, agents: s.agents };
   });
-  const cwd = r.cwd || process.cwd();
-  if (r.fire) {
-    logNotify(cwd, "notify: SubagentStop で最後のエージェントが終了、本体は停止済み → 通知");
-    notifyDone(cwd, r.chain);
-  } else {
-    logNotify(cwd, `skip: SubagentStop（${r.why}）`);
-  }
+  logNotify(r.cwd || process.cwd(), `skip: SubagentStop（鳴らさない。残り ${r.agents}。通知は本体の最後の Stop で）`);
 }
 
-// 本体停止（Stop フックの最後）。残り 0 なら即通知、残りがあれば保留して 10 分の保険を仕掛ける。
+// 本体停止（Stop フックの最後）。裏のエージェントが 0 なら 1 回だけ通知。残っていれば鳴らさない
+// （本体はエージェントの結果を受けて再開し、その最後の Stop で鳴る。保険の通知は無い）。
 function mainStopped(sessionId, cwd) {
   const chain = getAncestorChain();
   const now = Date.now();
@@ -120,35 +115,11 @@ function mainStopped(sessionId, cwd) {
     logNotify(cwd, "notify: Stop で本体停止、裏のエージェント 0 → 通知");
     notifyDone(cwd, chain);
   } else if (r.r === "pending") {
-    logNotify(cwd, `hold: Stop で本体停止したが裏のエージェントが残り ${r.agents} → 最後の SubagentStop まで保留（保険 ${FALLBACK_SECONDS} 秒）`);
-    process.stdout.write("dev-guard: 裏で動くエージェントが残っているため、通知は全部終わってから出します。\n");
-    launchDetached(process.execPath, [
-      path.join(__dirname, "notify_watcher.js"), String(sessionId), String(now), String(FALLBACK_SECONDS),
-    ]);
+    logNotify(cwd, `hold: Stop で本体停止したが裏のエージェントが残り ${r.agents} → 鳴らさない（本体が再開して最後に止まったとき 1 回）`);
   } else {
     logNotify(cwd, "skip: 数秒内の二重 Stop → 1 回にまとめる");
   }
   return r.r;
-}
-
-// 10 分の保険（notify_watcher.js から）。印が同じままで未通知なら 1 回だけ通知する。
-function fallbackNotify(sessionId, stoppedAt) {
-  const r = withState(sessionId, (s) => {
-    if (s.mainStopped && s.stoppedAt === stoppedAt && !s.notified) {
-      s.notified = true;
-      return { fire: true, cwd: s.cwd, chain: s.chain, agents: s.agents };
-    }
-    const why = (!s.mainStopped || s.stoppedAt !== stoppedAt) ? "その後に次の指示が来て印が消えた" : "すでに通知済み";
-    return { fire: false, cwd: s.cwd, why };
-  });
-  const cwd = r.cwd || process.cwd();
-  if (r.fire) {
-    logNotify(cwd, `notify: 保険（${FALLBACK_SECONDS} 秒）で未通知のまま → 通知（数え漏れの可能性。残りカウント ${r.agents}）`);
-    notifyDone(cwd, r.chain);
-  } else {
-    logNotify(cwd, `skip: 保険（${r.why}）`);
-  }
-  return r.fire;
 }
 
 // 次の指示が来た（UserPromptSubmit）。本体は動き出すので印を消す。
@@ -173,6 +144,6 @@ function pruneOld() {
 }
 
 module.exports = {
-  STATE_DIR, stateFile, withState, agentStarted, agentStopped, mainStopped, fallbackNotify,
+  STATE_DIR, stateFile, withState, agentStarted, agentStopped, mainStopped,
   turnStarted, sessionEnded, pruneOld,
 };
